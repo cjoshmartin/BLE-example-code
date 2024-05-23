@@ -36,13 +36,24 @@ int readValue(BLECharacteristic *characteristic) {
 class MyCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) {
     }
-    
-    void onConnect(BLEServer* pServer) {
-      }
-
-    void onDisconnect(BLEServer* pServer){
-      }
 };
+
+
+bool deviceConnected = false;
+bool oldDeviceConnected = false;
+
+class MyServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) {
+      deviceConnected = true;
+      Serial.println("Connected from device");
+    };
+
+    void onDisconnect(BLEServer* pServer) {
+      deviceConnected = false;
+      Serial.println("Disconnected from device");
+    }
+};
+
 
 BLECharacteristic* createCharacteristic(char* characteristicUuid, BLEService *pService)
 {
@@ -63,6 +74,7 @@ void setup() {
   while(!Serial);
   BLEDevice::init(DEVICE_NAME);
   pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacks());
   BLEService *pService = pServer->createService(SERVICE_UUID);
 
   pStepCountCharacteristic = createCharacteristic(STEPCOUNT_CHARACTERISTIC_UUID, pService);
@@ -83,6 +95,24 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
+
+   // disconnecting
+  if (!deviceConnected && oldDeviceConnected) {
+    delay(500); // give the bluetooth stack the chance to get things ready
+    pServer->startAdvertising(); // restart advertising
+    Serial.println("start advertising");
+    oldDeviceConnected = deviceConnected;
+  }
+  // connecting
+  if (deviceConnected && !oldDeviceConnected) {
+    // do stuff here on connecting
+    oldDeviceConnected = deviceConnected;
+  }
+
+     if(!deviceConnected){
+    return;
+  }
+
   int stepCount = random(30);
   String stepData = String(stepCount);
   pStepCountCharacteristic->setValue(stepData.c_str());
