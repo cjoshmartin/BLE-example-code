@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
-import { Button, Platform, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Button, FlatList, Platform, Pressable, SafeAreaView, Text, View } from 'react-native';
 import { BleManager, Device } from 'react-native-ble-plx';
 import { useAndroidPermissions } from './useAndroidPermissions';
 import {  atob, btoa } from "react-native-quick-base64";
@@ -15,6 +15,8 @@ const  HEARTRATE_CHARACTERISTIC_UUID = "c58b67c8-f685-40d2-af4c-84bcdaf3b22e";
 export default function App() {
   const [hasPermissions, setHasPermissions] = useState<boolean>(Platform.OS == 'ios');
   const [waitingPerm, grantedPerm] = useAndroidPermissions();
+  const devicesRef = useRef({});
+  const [devices, setDevices] = useState({});
 
   const [connectionStatus, setConnectionStatus] = useState("Searching...");
   const [isConnected, setIsConnected] = useState<boolean>(false);
@@ -49,25 +51,30 @@ export default function App() {
   }, [hasPermissions]);
 
   const searchAndConnectToDevice = () =>
-    bleManager.startDeviceScan(null, null, (error, device) => {
+    bleManager.startDeviceScan([], {allowDuplicates: false}, (error, device) => {
+
       if (error) {
         console.error(error);
         setIsConnected(false);
         setConnectionStatus("Error searching for devices");
         return;
       }
-      if (device?.name === DEVICE_NAME) {
-        bleManager.stopDeviceScan();
-        setConnectionStatus("Connecting...");
-        connectToDevice(device);
+      if (device?.name){
+        devicesRef.current
+        if(!devicesRef.current) {
+          devicesRef.current = {};
+        }
+        else {
+          //@ts-ignore
+          devicesRef.current[device.name] = device
+        }
+        setDevices(devicesRef?.current);
       }
     });
 
-
-
     const connectToDevice = async (device: Device) => {
       try {
-      const _device = await device.connect(); 
+      const _device = await bleManager.connectToDevice(device.id, undefined); 
        // require to make all services and Characteristics accessable
       await _device.discoverAllServicesAndCharacteristics();
       setConnectionStatus("Connected");
@@ -135,6 +142,32 @@ export default function App() {
       return () => sub.remove()
     }, [device])
 
+    function Item (props: Device){
+      return (
+        <Pressable key={props.id}
+          onPress={() =>{
+                bleManager.stopDeviceScan();
+                setConnectionStatus("Connecting...");
+                console.log(props.connect)
+                connectToDevice(props);
+          }}
+          style={{
+            backgroundColor: '#2596be',
+            padding: 16,
+            marginBottom: 10,
+            borderRadius: 20
+          }}
+        >
+          <Text
+            style={{
+              color: 'white',
+              fontWeight: '500',
+              fontSize: 16
+            }}
+          >{props.name} // {props.rssi}</Text>
+        </Pressable>
+      );
+    }
 
   return (
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
@@ -143,21 +176,40 @@ export default function App() {
           <Text>Looks like you have not enabled Permission for BLE</Text>
         </View>
       )}
-      {hasPermissions && (
+      {hasPermissions && !isConnected && (
+        <SafeAreaView
+            style={
+              {
+                flex: 1,
+                //@ts-ignore
+                marginTop: 50,
+              }
+            }
+        >
+          <Text
+            style={{fontWeight: '600', fontSize: 24, marginBottom: 14 }}
+          >Device connection list</Text>
+            {/*@ts-ignore */}
+          <FlatList
+          //@ts-ignore
+            data={Object.values(devices).sort((a, b) => Number(b.rssi) - Number(a.rssi))}
+            //@ts-ignore
+            renderItem={( {item}: {item: Device}, i: number ) => <Item {...item} />}
+            keyExtractor={(item: Device) => item.id + item.rssi}
+          />
+        </SafeAreaView>
+      )}
+      {hasPermissions && isConnected && (
         <View>
           <Text>BLE Premissions enabled!</Text>
           <Text>The connection status is: {connectionStatus}</Text>
-          <Button
-            disabled={!isConnected}
-            onPress={() => {}}
-            title={`The button is ${isConnected ? "enabled" : "disabled"}`}
-          />
+          <Button onPress={() => {}} title={`The button is enabled`} />
 
-          <View style={{margin: 10}}>
+          <View style={{ margin: 10 }}>
             <Text>The current Step count is: {stepCount}</Text>
           </View>
 
-          <View style={{margin: 10}}>
+          <View style={{ margin: 10 }}>
             <Text style={{ fontWeight: "500", margin: 5 }}>
               Heart Rate value is: {heartRate}
             </Text>
