@@ -3,13 +3,14 @@ import { useEffect, useState } from 'react';
 import { Button, Platform, Text, View } from 'react-native';
 import { BleManager, Device } from 'react-native-ble-plx';
 import { useAndroidPermissions } from './useAndroidPermissions';
-import {  atob } from "react-native-quick-base64";
+import {  atob, btoa } from "react-native-quick-base64";
 
 const bleManager = new BleManager();
 
 const DEVICE_NAME = "MyESP32";
 const SERVICE_UUID = "ab49b033-1163-48db-931c-9c2a3002ee1d";
 const STEPCOUNT_CHARACTERISTIC_UUID = "fbb6411e-26a7-44fb-b7a3-a343e2b011fe";
+const  HEARTRATE_CHARACTERISTIC_UUID = "c58b67c8-f685-40d2-af4c-84bcdaf3b22e";
 
 export default function App() {
   const [hasPermissions, setHasPermissions] = useState<boolean>(Platform.OS == 'ios');
@@ -21,6 +22,19 @@ export default function App() {
   const [device, setDevice] = useState<Device | null>(null);
 
   const [stepCount, setStepCount] = useState(-1);
+
+  const [heartRate, setHeartRate] = useState(0);
+
+  useEffect(() => {
+    if(!device || !device.isConnected){
+      return;
+    }
+    device.writeCharacteristicWithResponseForService(
+      SERVICE_UUID,
+      HEARTRATE_CHARACTERISTIC_UUID,
+      btoa(String(heartRate))
+    ).catch(e => {})
+  }, [heartRate])
 
   useEffect(() => {
     if (!(Platform.OS == 'ios')){
@@ -60,6 +74,7 @@ export default function App() {
       setIsConnected(true);
       setDevice(_device);
       } catch (error){
+          console.error(error)
           setConnectionStatus("Error in Connection");
           setIsConnected(false);
       }
@@ -122,29 +137,38 @@ export default function App() {
 
 
   return (
-    <View
-    style={{flex: 1, alignItems: 'center', justifyContent:'center'}}
-    >
-    {
-      !hasPermissions && (
-        <View> 
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+      {!hasPermissions && (
+        <View>
           <Text>Looks like you have not enabled Permission for BLE</Text>
         </View>
-      )
-    }
-    {hasPermissions &&(
-      <View>
-      <Text>BLE Premissions enabled!</Text>
-      <Text>The connection status is: {connectionStatus}</Text>
-      <Button 
-      disabled={!isConnected} 
-      onPress={() => {}}
-      title={`The button is ${isConnected ? "enabled" : "disabled"}`}
-      />
-      <Text>The current Step count is: {stepCount}</Text>
-      </View>
-    )
-    }
+      )}
+      {hasPermissions && (
+        <View>
+          <Text>BLE Premissions enabled!</Text>
+          <Text>The connection status is: {connectionStatus}</Text>
+          <Button
+            disabled={!isConnected}
+            onPress={() => {}}
+            title={`The button is ${isConnected ? "enabled" : "disabled"}`}
+          />
+
+          <View style={{margin: 10}}>
+            <Text>The current Step count is: {stepCount}</Text>
+          </View>
+
+          <View style={{margin: 10}}>
+            <Text style={{ fontWeight: "500", margin: 5 }}>
+              Heart Rate value is: {heartRate}
+            </Text>
+            <Button
+              onPress={() => setHeartRate(heartRate + 1)}
+              title="Increase User's heart rate"
+              color="red"
+            />
+          </View>
+        </View>
+      )}
       <StatusBar style="auto" />
     </View>
   );
