@@ -1,3 +1,4 @@
+#include <ArduinoJson.h>
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
@@ -9,12 +10,11 @@ BLEServer *pServer;
 #define DEVICE_NAME "MyESP32"
 #define SERVICE_UUID "ab49b033-1163-48db-931c-9c2a3002ee1d"
 
-BLECharacteristic *pStepCountCharacteristic;
-#define STEPCOUNT_CHARACTERISTIC_UUID "fbb6411e-26a7-44fb-b7a3-a343e2b011fe"
+BLECharacteristic *pToggleCharacteristic;
+#define TOGGLES_CHARACTERISTIC_UUID "5bc6df48-8953-4fa6-a3a9-639ef83f7fe7"
 
-int heartRate = 0;
-BLECharacteristic *pHeartRateCharacteristic;
-# define HEARTRATE_CHARACTERISTIC_UUID "c58b67c8-f685-40d2-af4c-84bcdaf3b22e"
+BLECharacteristic *pAllLotCharacteristic;
+#define ALL_LOT_CHARACTERISTIC_UUID "605e066d-809a-44e2-8776-11d31ba100a2"
 
 int readValue(BLECharacteristic *characteristic) {
   if (characteristic == NULL) {
@@ -33,6 +33,15 @@ int readValue(BLECharacteristic *characteristic) {
   }
 }
 
+std::string readValue(BLECharacteristic *characteristic, bool isArray) {
+    std::string value = std::string(
+      (
+        characteristic->getValue()
+      ).c_str()
+    );
+
+    return value;
+}
 class MyCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) {
     }
@@ -77,8 +86,8 @@ void setup() {
   pServer->setCallbacks(new MyServerCallbacks());
   BLEService *pService = pServer->createService(SERVICE_UUID);
 
-  pStepCountCharacteristic = createCharacteristic(STEPCOUNT_CHARACTERISTIC_UUID, pService);
-  pHeartRateCharacteristic = createCharacteristic(HEARTRATE_CHARACTERISTIC_UUID, pService);
+  pToggleCharacteristic = createCharacteristic(TOGGLES_CHARACTERISTIC_UUID, pService);
+  pAllLotCharacteristic = createCharacteristic(ALL_LOT_CHARACTERISTIC_UUID, pService);
 
     //start the service
   pService->start();
@@ -91,6 +100,17 @@ void setup() {
   pAdvertising->setMinPreferred(0x12);
   BLEDevice::startAdvertising();
   Serial.println("Ready! For your bits!");
+}
+
+JsonDocument doc;
+
+void printBinary(byte inByte)
+{
+  for (int b = 7; b >= 0; b--)
+  {
+    Serial.print(bitRead(inByte, b));
+  }
+   Serial.println("");
 }
 
 void loop() {
@@ -113,23 +133,32 @@ void loop() {
     return;
   }
 
-  int stepCount = random(30);
-  String stepData = String(stepCount);
-  pStepCountCharacteristic->setValue(stepData.c_str());
-  pStepCountCharacteristic->notify();
+  int toggles = readValue(pToggleCharacteristic);
+  printBinary((byte)toggles);
 
-  Serial.print("Value is: ");
-  Serial.println(stepCount);
+  std::string value = readValue(pAllLotCharacteristic, true);
+  DeserializationError error = deserializeJson(doc, value);
 
-  heartRate = readValue(pHeartRateCharacteristic);
-  Serial.print("heart rate value is: ");
-  if (heartRate > 0){
-    Serial.println(heartRate);
-  }
-  else {
-    Serial.println("No Heart rate value received");
+  // Test if parsing succeeds.
+  if (error) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.f_str());
+    return;
   }
 
+  int v1 = doc[0];
+  int v2 = doc[1];
+  int v3 = doc[2];
+  int v4 = doc[3];
 
+  Serial.print("JSON Values: [");
+  Serial.print(v1);
+  Serial.print(",");
+  Serial.print(v2);
+  Serial.print(",");
+  Serial.print(v3);
+  Serial.print(",");
+  Serial.print(v4);
+  Serial.println("]");
   delay(500);
 }

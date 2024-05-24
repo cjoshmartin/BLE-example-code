@@ -1,42 +1,88 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Button, FlatList, Platform, Pressable, SafeAreaView, Text, View } from 'react-native';
+import * as eva from '@eva-design/eva';
+import { ApplicationProvider, Text, Button, Layout, List } from '@ui-kitten/components';
+import {
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  View,
+} from "react-native";
 import { BleManager, Device } from 'react-native-ble-plx';
 import { useAndroidPermissions } from './useAndroidPermissions';
-import {  atob, btoa } from "react-native-quick-base64";
+import {  btoa } from "react-native-quick-base64";
+import LightButton from './compoents/LightButton';
+import LightSlider from './compoents/LightSlider';
 
 const bleManager = new BleManager();
 
-const DEVICE_NAME = "MyESP32";
-const SERVICE_UUID = "ab49b033-1163-48db-931c-9c2a3002ee1d";
-const STEPCOUNT_CHARACTERISTIC_UUID = "fbb6411e-26a7-44fb-b7a3-a343e2b011fe";
-const  HEARTRATE_CHARACTERISTIC_UUID = "c58b67c8-f685-40d2-af4c-84bcdaf3b22e";
+const  SERVICE_UUID = "ab49b033-1163-48db-931c-9c2a3002ee1d";
+const  TOGGLES_LOT_CHARACTERISTIC_UUID = "5bc6df48-8953-4fa6-a3a9-639ef83f7fe7";
+const  ALL_LOT_CHARACTERISTIC_UUID = "605e066d-809a-44e2-8776-11d31ba100a2";
+
 
 export default function App() {
   const [hasPermissions, setHasPermissions] = useState<boolean>(Platform.OS == 'ios');
   const [waitingPerm, grantedPerm] = useAndroidPermissions();
-  const devicesRef = useRef({});
   const [devices, setDevices] = useState({});
-
-  const [connectionStatus, setConnectionStatus] = useState("Searching...");
-  const [isConnected, setIsConnected] = useState<boolean>(false);
-
   const [device, setDevice] = useState<Device | null>(null);
 
-  const [stepCount, setStepCount] = useState(-1);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [connectionStatus, setConnectionStatus] = useState("Searching...");
 
-  const [heartRate, setHeartRate] = useState(0);
+  const [adj1, setAdj1] = useState(0);
+  const [adj2, setAdj2] = useState(0);
+  const [adj3, setAdj3] = useState(0);
+  const [adj4, setAdj4] = useState(0);
+
+  const LAMP_TOGGLE_1_MASK = 0b1000;
+  const LAMP_TOGGLE_2_MASK = 0b0100;
+  const LAMP_TOGGLE_3_MASK = 0b0010;
+  const LAMP_TOGGLE_4_MASK = 0b0001;
+
+  const [toggles, setToggles] = useState(0);
+
+
+  function getRandomInt(max: number) {
+    return Math.floor(Math.random() * max);
+  }
 
   useEffect(() => {
-    if(!device || !device.isConnected){
+    if (!device || !device.isConnected){
       return;
     }
-    device.writeCharacteristicWithResponseForService(
-      SERVICE_UUID,
-      HEARTRATE_CHARACTERISTIC_UUID,
-      btoa(String(heartRate))
-    ).catch(e => {})
-  }, [heartRate])
+
+      const testData = JSON.stringify([
+        adj1,
+        adj2,
+        adj3,
+        adj4,
+      ]);
+      console.log("Sending array of test data...");
+      device
+        .writeCharacteristicWithResponseForService(
+          SERVICE_UUID,
+          ALL_LOT_CHARACTERISTIC_UUID,
+          btoa(testData)
+        )
+        .catch((e) => {});
+
+  }, [device, adj1, adj2, adj3, adj4])
+
+  useEffect(() => {
+    if (!device || !device.isConnected){
+      return;
+    }
+      console.log("Sending array of test data...");
+      device
+        .writeCharacteristicWithResponseForService(
+          SERVICE_UUID,
+          TOGGLES_LOT_CHARACTERISTIC_UUID,
+          btoa(String(toggles))
+        )
+        .catch((e) => {});
+
+  }, [device, toggles])
 
   useEffect(() => {
     if (!(Platform.OS == 'ios')){
@@ -45,13 +91,16 @@ export default function App() {
   }, [grantedPerm])
 
   useEffect(() => {
-    if(hasPermissions){
+    if(hasPermissions && !isConnected){
       searchAndConnectToDevice();
     }
-  }, [hasPermissions]);
+  }, [hasPermissions, isConnected]);
 
-  const searchAndConnectToDevice = () =>
-    bleManager.startDeviceScan([], {allowDuplicates: false}, (error, device) => {
+  const devicesRef = useRef({});
+  const devicesRefreshIntervalRef = useRef(0);
+
+  const searchAndConnectToDevice = () => {
+    bleManager.startDeviceScan([SERVICE_UUID], {allowDuplicates: false}, (error, device) => {
 
       if (error) {
         console.error(error);
@@ -68,11 +117,26 @@ export default function App() {
           //@ts-ignore
           devicesRef.current[device.name] = device
         }
-        setDevices(devicesRef?.current);
       }
     });
+    
+    const id = setInterval(() => {
+          console.log('refreshing list to be: ', Object.keys(devicesRef?.current))
+          const values = Object.values(devicesRef?.current)
+              //@ts-ignore
+              .sort((a, b) => Number(b.rssi) - Number(a.rssi))
+              .filter((value, i) => i < 20)
+
+          setDevices(values);
+        }, 3000)
+    //@ts-ignore
+      devicesRefreshIntervalRef.current = id;
+  }
 
     const connectToDevice = async (device: Device) => {
+      bleManager.stopDeviceScan();
+      clearInterval(devicesRefreshIntervalRef.current);
+      devicesRefreshIntervalRef.current = 0;
       try {
       const _device = await bleManager.connectToDevice(device.id, undefined); 
        // require to make all services and Characteristics accessable
@@ -86,8 +150,6 @@ export default function App() {
           setIsConnected(false);
       }
     };
-
-
 
     useEffect(() => {
       if (!device) {
@@ -122,55 +184,30 @@ export default function App() {
 
       return () => subscription.remove();
     }, [device]);
-  
-    useEffect(() => {
-      if(!device || !device.isConnected) {
-        return
-      }
-      const sub = device.monitorCharacteristicForService(
-        SERVICE_UUID,
-        STEPCOUNT_CHARACTERISTIC_UUID,
-        (error, char) => {
-          if (error || !char) {
-            return;
-          }
 
-          const rawValue = parseInt(atob(char?.value ?? ""));
-          setStepCount(rawValue);
-        }
-      )
-      return () => sub.remove()
-    }, [device])
+    function Item (props: any){
+      const {id, name, rssi} = props.item;
 
-    function Item (props: Device){
       return (
-        <Pressable key={props.id}
+        <Button 
+        key={id}
           onPress={() =>{
-                bleManager.stopDeviceScan();
                 setConnectionStatus("Connecting...");
-                console.log(props.connect)
-                connectToDevice(props);
+                connectToDevice(props.item);
           }}
           style={{
-            backgroundColor: '#2596be',
             padding: 16,
             marginBottom: 10,
-            borderRadius: 20
           }}
         >
-          <Text
-            style={{
-              color: 'white',
-              fontWeight: '500',
-              fontSize: 16
-            }}
-          >{props.name} // {props.rssi}</Text>
-        </Pressable>
+          <Text >{name} // {rssi}</Text>
+        </Button>
       );
     }
 
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+    <ApplicationProvider {...eva} theme={eva.dark}>
+    <Layout style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
       {!hasPermissions && (
         <View>
           <Text>Looks like you have not enabled Permission for BLE</Text>
@@ -178,50 +215,102 @@ export default function App() {
       )}
       {hasPermissions && !isConnected && (
         <SafeAreaView
-            style={
-              {
-                flex: 1,
-                //@ts-ignore
-                marginTop: 50,
-              }
-            }
-        >
-          <Text
-            style={{fontWeight: '600', fontSize: 24, marginBottom: 14 }}
-          >Device connection list</Text>
-            {/*@ts-ignore */}
-          <FlatList
-          //@ts-ignore
-            data={Object.values(devices).sort((a, b) => Number(b.rssi) - Number(a.rssi))}
+          style={{
+            flex: 1,
             //@ts-ignore
-            renderItem={( {item}: {item: Device}, i: number ) => <Item {...item} />}
-            keyExtractor={(item: Device) => item.id + item.rssi}
+            marginTop: 50,
+          }}
+        >
+          <Text style={{ marginBottom: 14 }} category='h1'>
+            Device connection list
+          </Text>
+          <List
+          //@ts-ignore
+            data={devices}
+            renderItem={Item}
           />
         </SafeAreaView>
       )}
-      {hasPermissions && isConnected && (
-        <View>
-          <Text>BLE Premissions enabled!</Text>
-          <Text>The connection status is: {connectionStatus}</Text>
-          <Button onPress={() => {}} title={`The button is enabled`} />
-
-          <View style={{ margin: 10 }}>
-            <Text>The current Step count is: {stepCount}</Text>
-          </View>
-
-          <View style={{ margin: 10 }}>
-            <Text style={{ fontWeight: "500", margin: 5 }}>
-              Heart Rate value is: {heartRate}
+      {hasPermissions && 
+      isConnected &&
+       (
+        <View style={{margin: 30}}>
+          <View style={{ flex: 1, justifyContent: "center" }}>
+            <Text
+            category='h2'
+              style={{
+                marginBottom: 10,
+              }}
+            >
+              Toggleable Lights
             </Text>
-            <Button
-              onPress={() => setHeartRate(heartRate + 1)}
-              title="Increase User's heart rate"
-              color="red"
-            />
+            <View style={{ flex: 0.5, flexDirection: "row", gap: 5 }}>
+              <LightButton
+                name={"Bedroom"}
+                value={toggles}
+                onChange={(value: any) => setToggles(value)}
+                mask={LAMP_TOGGLE_1_MASK}
+              />
+              <LightButton name={"Kitchen"} 
+                value={toggles}
+                onChange={(value: any) => setToggles(value)}
+                mask={LAMP_TOGGLE_2_MASK}
+              />
+              <LightButton name={"Basement"} 
+                value={toggles}
+                onChange={(value: any) => setToggles(value)}
+                mask={LAMP_TOGGLE_3_MASK}
+              />
+              <LightButton name={"Office"} 
+                value={toggles}
+                onChange={(value: any) => setToggles(value)}
+                mask={LAMP_TOGGLE_4_MASK}
+              />
+            </View>
+          </View>
+          <View style={{ flex: 3 }}>
+            <Text
+              style={{
+                marginBottom: 10,
+              }}
+              category='h2'
+            >
+              Adjustable Lights
+            </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 15,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <LightSlider
+                name="Kid's Room"
+                value={adj1}
+                onChange={(value: number) => setAdj1(value)}
+              />
+              <LightSlider
+                name="Front Porch"
+                value={adj2}
+                onChange={(value: number) => setAdj2(value)}
+              />
+              <LightSlider
+                name="Back Porch"
+                value={adj3}
+                onChange={(value: number) => setAdj3(value)}
+              />
+              <LightSlider
+                name="Garage"
+                value={adj4}
+                onChange={(value: number) => setAdj4(value)}
+              />
+            </View>
           </View>
         </View>
       )}
       <StatusBar style="auto" />
-    </View>
+    </Layout>
+</ApplicationProvider>
   );
 }

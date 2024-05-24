@@ -9,13 +9,19 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@eva-design/eva": "^2.2.0",
+    "@ui-kitten/components": "^5.3.1",
     "expo": "~50.0.6",
     "expo-status-bar": "~1.11.1",
     "expo-system-ui": "~2.9.4",
     "react": "18.2.0",
     "react-native": "0.73.6",
     "react-native-ble-plx": "^3.1.2",
-    "react-native-quick-base64": "^2.1.2"
+    "react-native-gesture-handler": "~2.14.0",
+    "react-native-quick-base64": "^2.1.2",
+    "react-native-reanimated": "~3.6.2",
+    "react-native-svg": "9.13.6",
+    "rn-vertical-slider": "^4.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
